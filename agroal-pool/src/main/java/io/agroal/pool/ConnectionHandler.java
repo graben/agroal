@@ -24,6 +24,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 import static io.agroal.pool.ConnectionHandler.DirtyAttribute.AUTOCOMMIT;
+import static io.agroal.pool.ConnectionHandler.DirtyAttribute.RECOVERY;
 import static io.agroal.pool.ConnectionHandler.DirtyAttribute.TRANSACTION_ISOLATION;
 import static io.agroal.pool.util.ListenerHelper.fireOnWarning;
 import static java.lang.System.nanoTime;
@@ -244,6 +245,10 @@ public final class ConnectionHandler implements TransactionAware, Acquirable {
         return connectionPool.getConfiguration().connectionValidator().isValid( detachedWrapper() );
     }
 
+    public boolean isRecoveryConnection() {
+        return dirtyAttributes.contains( RECOVERY );
+    }
+
     // --- Leak detection //
 
     public Thread getHoldingThread() {
@@ -408,6 +413,6 @@ public final class ConnectionHandler implements TransactionAware, Acquirable {
     }
 
     public enum DirtyAttribute {
-        AUTOCOMMIT, TRANSACTION_ISOLATION, NETWORK_TIMEOUT, SCHEMA, CATALOG
+        AUTOCOMMIT, TRANSACTION_ISOLATION, NETWORK_TIMEOUT, SCHEMA, CATALOG, RECOVERY
     }
 }

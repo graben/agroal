@@ -179,6 +179,40 @@ public class RecoveryTests {
         }
     }
 
+    @Test
+    @DisplayName( "Overrule pool maxSize while recovery is grabbing connection from pool" )
+    void poolMaxSizeOverruleWhileRecoveryTest() throws SQLException, InterruptedException {
+        TransactionManager txManager = com.arjuna.ats.jta.TransactionManager.transactionManager();
+        TransactionSynchronizationRegistry txSyncRegistry = new com.arjuna.ats.internal.jta.transaction.arjunacore.TransactionSynchronizationRegistryImple();
+
+        com.arjuna.ats.arjuna.common.recoveryPropertyManager.getRecoveryEnvironmentBean().setRecoveryBackoffPeriod( 2 );
+        RecoveryManager recoveryManager = RecoveryManager.manager( DIRECT_MANAGEMENT );
+
+        RecoveryManagerService recoveryService = new RecoveryManagerService();
+        recoveryService.create();
+
+        AgroalDataSourceConfigurationSupplier configurationSupplier = new AgroalDataSourceConfigurationSupplier()
+                .connectionPoolConfiguration( cp -> cp
+                        .maxSize( 1 )
+                        .transactionIntegration( new NarayanaTransactionIntegration( txManager, txSyncRegistry, "", false, recoveryService ) )
+                        .connectionFactoryConfiguration( cf -> cf
+                                .connectionProviderClass( RequiresCloseXADataSource.class ) )
+                );
+
+        try ( AgroalDataSource dataSource = AgroalDataSource.from( configurationSupplier, new WarningsAgroalDatasourceListener() ) ) {
+            logger.info("Starting recovery on DataSource " + dataSource);
+            new Thread( () -> recoveryManager.scan() ).start();
+            Thread.sleep( 500 );
+            try ( Connection conn = dataSource.getConnection() ) {
+                logger.info( "Created connection during recovery " + conn );
+            }
+            Thread.sleep( 500 );
+            assertEquals( 1, RequiresCloseXADataSource.getClosed(), "Expected one connections to have been closed" );
+        } finally {
+            recoveryManager.terminate( true );
+        }
+    }
+
     @ParameterizedTest
     @ArgumentsSource( RecoveryTestsArgumentsSource.class )
     @DisplayName( "Close recovery connection" )

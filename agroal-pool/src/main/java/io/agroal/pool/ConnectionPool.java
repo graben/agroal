@@ -101,6 +101,8 @@ public final class ConnectionPool implements Pool {
     private ConnectionCache localCache;
     private List<AgroalPoolInterceptor> interceptors;
 
+    private volatile boolean recoveryConnectionBorrowed = false;
+
     public ConnectionPool(AgroalConnectionPoolConfiguration configuration, AgroalDataSourceListener... listeners) {
         this.configuration = configuration;
         this.listeners = listeners;
@@ -226,13 +228,16 @@ public final class ConnectionPool implements Pool {
                 }
             } while ( ( borrowValidationEnabled && !borrowValidation( checkedOutHandler ) )
                     || ( idleValidationEnabled && !idleValidation( checkedOutHandler ) ) );
-            
+
             activeCount.increment();
+            recoveryConnectionBorrowed = true;
+            checkedOutHandler.setDirtyAttribute( ConnectionHandler.DirtyAttribute.RECOVERY );
             fireOnConnectionAcquiredInterceptor( interceptors, checkedOutHandler );
             afterAcquire( stamp, checkedOutHandler, false );
             return checkedOutHandler.xaConnectionWrapper();
         } catch ( Throwable t ) {
             if ( checkedOutHandler != null ) {
+                recoveryConnectionBorrowed = false;
                 checkedOutHandler.setState( CHECKED_OUT, CHECKED_IN );
             }
             throw t;
@@ -325,7 +330,8 @@ public final class ConnectionPool implements Pool {
                     }
                 }
                 // If no connections are available and there is room, create one
-                if ( task == null && allConnections.size() < configuration.maxSize() ) {
+                if ( ( task == null && allConnections.size() < configuration.maxSize() ) 
+                   || ( task == null && allConnections.size() == configuration.maxSize() && recoveryConnectionBorrowed ) ){
                     task = housekeepingExecutor.executeNow( new CreateConnectionTask() );
                 }
                 long start = nanoTime();
@@ -439,6 +445,9 @@ public final class ConnectionPool implements Pool {
 
     public void returnConnectionHandler(ConnectionHandler handler) throws SQLException {
         fireBeforeConnectionReturn( listeners, handler );
+        if ( handler.isRecoveryConnection() ) {
+            recoveryConnectionBorrowed = false;
+        }
         if ( leakEnabled ) {
             handler.setHoldingThread( null );
             if ( configuration.enhancedLeakReport() ) {
@@ -570,7 +579,7 @@ public final class ConnectionPool implements Pool {
 
         @Override
         public ConnectionHandler call() throws SQLException {
-            if ( !initial && allConnections.size() >= configuration.maxSize() ) {
+            if ( !initial && allConnections.size() >= configuration.maxSize() && !recoveryConnectionBorrowed) {
                 return null;
             }
             fireBeforeConnectionCreation( listeners );
