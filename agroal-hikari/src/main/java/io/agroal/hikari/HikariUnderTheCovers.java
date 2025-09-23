@@ -152,6 +152,11 @@ public class HikariUnderTheCovers implements AgroalDataSource {
     }
 
     @Override
+    public Connection getConnection(boolean readOnly) throws SQLException {
+        return null;
+    }
+
+    @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
         return hikari.unwrap( iface );
     }

@@ -249,6 +249,11 @@ public final class Poolless implements Pool {
         }
     }
 
+    @Override
+    public Connection getConnection(boolean readOnly) throws SQLException {
+        return null;
+    }
+
     private ConnectionHandler handlerFromTransaction() throws SQLException {
         return (ConnectionHandler) transactionIntegration.getTransactionAware();
     }
