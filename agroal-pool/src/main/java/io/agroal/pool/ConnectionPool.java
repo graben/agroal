@@ -290,6 +290,11 @@ public final class ConnectionPool implements Pool {
 
     @Override
     public Connection getConnection() throws SQLException {
+        return getConnection( false );
+    }
+
+    @Override
+    public Connection getConnection(boolean readOnly) throws SQLException {
         long stamp = beforeAcquire();
 
         ConnectionHandler checkedOutHandler = handlerFromTransaction();
@@ -297,6 +302,9 @@ public final class ConnectionPool implements Pool {
             // AG-140 - If associate throws here is fine, it's assumed the synchronization that returns the connection has been registered
             transactionIntegration.associate( checkedOutHandler, checkedOutHandler.getXaResource() );
             afterAcquire( stamp, checkedOutHandler, true );
+            if ( readOnly && !checkedOutHandler.rawConnection().isReadOnly() ) {
+                throw new SQLException( "Attempted to modify read-only state while enlisted in transaction" );
+            }
             return checkedOutHandler.connectionWrapper();
         }
         checkMultipleAcquisition();
@@ -316,6 +324,10 @@ public final class ConnectionPool implements Pool {
             }
             fireOnConnectionAcquiredInterceptor( interceptors, checkedOutHandler );
             afterAcquire( stamp, checkedOutHandler, true );
+            if ( readOnly ) {
+                checkedOutHandler.setDirtyAttribute( ConnectionHandler.DirtyAttribute.READ_ONLY );
+                checkedOutHandler.rawConnection().setReadOnly( true );
+            }
             return checkedOutHandler.connectionWrapper();
         } catch ( Throwable t ) {
             if ( checkedOutHandler != null ) {
